@@ -79,14 +79,20 @@ Thumbs.db
 # Project specific
 AITradeGame.db
 trading_bot.db
-config.py
+
+# Release builds
+release/
+*.zip
+
+# Logs directory (keep structure)
+logs/*.log
+logs/prompts/
 
 # Compiled files
 *.exe
 *.msi
 *.dmg
-build_package.py
-一键打包.bat
-build_all.py
-AITradeGame.db.backup
+
+# Cursor/Claude
 .claude/
+.cursor/

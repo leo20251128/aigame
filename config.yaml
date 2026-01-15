@@ -1,0 +1,415 @@
+# ============================================================
+# AITradeGame 量化交易系统配置
+# Quantitative Trading System Configuration
+# ============================================================
+# 
+# 本文件用于配置交易系统的所有超参数
+# 修改后重启系统即可生效
+# 
+# 注意：敏感信息（API密钥等）建议使用环境变量覆盖
+# ============================================================
+
+# ============================================================
+# OKX 交易所配置
+# Exchange Configuration
+# ============================================================
+okx:
+  # 是否启用真实交易（false=模拟交易，用数据库记录）
+  enable_real_trading: true
+  
+  # API 密钥配置（建议通过环境变量设置：OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE）
+  api_key: "c7cd9542-a23e-4ca6-8594-5919e09c2987"
+  secret_key: "33E1477D6653B2602BD35BA729B042AF"
+  passphrase: "wS@19950516"
+  
+  # API URL 配置
+  # 主域名：https://www.okx.com
+  # 备用域名（AWS）：https://aws.okx.com（网络不稳定时使用）
+  api_url: "https://www.okx.com"
+  api_url_backup: "https://aws.okx.com"
+  use_backup_url: false          # 是否默认使用备用URL
+  auto_switch_url: true          # 连接失败时自动切换备用URL
+  
+  # SSL证书验证（网络问题时可设为false，但不推荐长期使用）
+  # 设为false会禁用SSL证书验证（紧急模式，用于Docker等网络受限环境）
+  ssl_verify: true
+  
+  # 是否使用模拟盘（OKX 提供的模拟交易环境）
+  demo_trading: false
+  
+  # 保证金模式：isolated（逐仓） 或 cross（全仓）
+  margin_mode: "cross"
+  
+  # 产品类型：SWAP（永续合约）
+  inst_type: "SWAP"
+  inst_suffix: "-USDT-SWAP"
+
+# ============================================================
+# 核心交易参数
+# Core Trading Parameters
+# ============================================================
+trading:
+  # 交易周期（秒）- 每隔多久执行一次交易决策
+  # 建议：900（15分钟）- 过滤短期噪音，减少交易费用
+  cycle_seconds: 900
+  
+  # 冷却期（秒）- 同一币种交易后多久才能再次交易
+  # 建议：2700（45分钟）- 避免频繁反复交易
+  cooldown_seconds: 2700
+  
+  # 交易币种列表
+  # 建议选择流动性好、波动适中的主流币
+  coins:
+    - "BTC"
+    - "ETH"
+    - "BNB"
+    - "XRP"
+    - "DOGE"
+    - "SOL"
+  
+  # K线数据配置
+  kline:
+    # 日内数据（3分钟间隔）数量
+    intraday_limit: 15
+    # 4小时数据数量
+    h4_limit: 12
+    # 日线数据数量（用于长期趋势判断）
+    daily_limit: 10
+# ============================================================
+# AI 决策参数
+# AI Decision Parameters
+# ============================================================
+ai:
+  # 最低置信度阈值（0-1）
+  # 只有 AI 判断置信度超过此值才会执行交易
+  # 建议：0.70-0.75，不要太高以免错过机会
+  min_confidence: 0.75
+  
+  # 最大同时持仓数量
+  # 小账户（<$500）建议：2，集中资金
+  # 大账户建议：3-5，分散风险
+  max_positions: 2
+  
+  # 每个交易周期最多开仓数量
+  # 建议：1-2，根据机会质量决定
+  max_new_positions_per_cycle: 2
+  
+  # 动态置信度调整（根据市场波动率）
+  dynamic_confidence:
+    enabled: true
+    low_volatility_threshold: 0.70    # 低波动时可降低阈值（市场稳定）
+    normal_threshold: 0.75            # 正常情况
+    high_volatility_threshold: 0.80   # 高波动时需要更高置信度（更谨慎）
+    volatility_boundary: 50           # 波动率分界线
+  
+  # 允许满仓时调整持仓（平差仓开好仓）
+  allow_position_swap: true
+
+# ============================================================
+# 杠杆与仓位管理
+# Leverage & Position Management
+# ============================================================
+leverage:
+  # 默认杠杆倍数
+  default: 3
+  
+  # 最大允许杠杆
+  # 警告：高杠杆风险极大，建议不超过5倍
+  max: 5
+  
+  # 最小杠杆
+  min: 1
+  
+  # 根据波动率自动调整杠杆的规则
+  # [最大波动率, 最低置信度, 杠杆倍数]
+  # 调整：适当降低置信度门槛，允许更灵活的杠杆使用
+  rules:
+    - [25, 0.72, 5]    # 低波动 + 高置信度 = 5倍杠杆
+    - [40, 0.68, 4]    # 中波动 + 中等置信度 = 4倍杠杆
+    - [60, 0.60, 3]    # 较高波动 = 3倍杠杆
+    - [999, 0.0, 2]    # 高波动 = 2倍杠杆
+
+# ============================================================
+# 风险控制参数
+# Risk Control Parameters
+# ============================================================
+risk:
+  # 单笔交易风险比例（占账户总值）
+  base_risk_per_trade: 0.15      # 基础风险 15%
+  max_risk_per_trade: 0.30       # 最大风险 30%（高置信度时）
+  min_risk_per_trade: 0.08       # 最小风险 8%
+  
+  # 交易金额限制
+  # 注意：小账户需要提高比例才能充分利用资金
+  min_trade_value_usd: 10        # 最小交易额（美元）- 进一步降低
+  max_trade_value_pct: 0.70      # 最大单笔占账户比例 - 提高到70%
+  
+  # 最大允许波动率（超过则不交易）
+  # 加密货币波动较大，建议设置 90-100
+  max_volatility_threshold: 95
+  
+  # 风险回报比（止盈距离/止损距离）
+  # 建议：2.0 以上，确保长期盈利
+  risk_reward_ratio: 2.0
+  
+  # 波动率调整因子
+  # [最大波动率, 调整因子]
+  # 注意：加密货币波动大，因子不宜过低否则仓位太小
+  volatility_factors:
+    - [40, 1.2]      # 低波动，放大仓位
+    - [60, 1.0]      # 正常波动
+    - [80, 0.9]      # 较高波动，略微缩小
+    - [999, 0.8]     # 高波动，适度缩小（不过分保守）
+
+# ============================================================
+# 止盈止损配置
+# Take Profit & Stop Loss
+# ============================================================
+take_profit:
+  # 是否启用自动止盈
+  enabled: true
+  
+  # 快速止盈阈值
+  quick_profit_threshold: 0.10   # 盈利10%立即全平
+  enable_quick_exit: true
+  
+  # 阶梯止盈规则
+  # [盈利百分比, 平仓比例, 描述]
+  rules:
+    - [0.08, 1.0, "盈利8%全平"]
+    - [0.05, 0.50, "盈利5%平半仓"]
+    - [0.03, 0.30, "盈利3%平30%"]
+  
+  # 部分止盈规则（按达成目标进度）
+  # [进度比例, 平仓比例]
+  scale_out_rules:
+    - [1.0, 0.50]    # 达到目标100%，平50%
+    - [0.8, 0.30]    # 达到目标80%，平30%
+    - [0.6, 0.20]    # 达到目标60%，平20%
+
+stop_loss:
+  # 默认止损比例
+  default_pct: 0.08              # 8% 止损
+  
+  # 最大止损比例
+  max_pct: 0.12                  # 12% 止损
+  
+  # ATR 倍数（用于计算动态止损）
+  atr_multiplier: 2.5
+  
+  # 根据波动率调整止损
+  # [最大波动率, 止损比例]
+  rules:
+    - [30, 0.04]     # 低波动，4%止损
+    - [50, 0.05]     # 中波动，5%止损
+    - [80, 0.06]     # 较高波动，6%止损
+    - [999, 0.08]    # 高波动，8%止损
+
+# ============================================================
+# 安全保护机制
+# Safety Protection
+# ============================================================
+safety:
+  # 日亏损上限（超过则停止交易）
+  max_daily_loss_pct: 0.10       # 10%
+  
+  # 总亏损上限（超过则停止交易）
+  max_total_loss_pct: 0.15       # 15%
+  
+  # 每日最大交易次数
+  max_daily_trades: 50
+  
+  # 紧急停止开关
+  emergency_stop: false
+
+# ============================================================
+# API 连接配置
+# API Connection Settings
+# ============================================================
+api:
+  # 通用 API 设置
+  max_retries: 3                 # 最大重试次数
+  timeout: 90                    # 超时时间（秒）
+  retry_delay: 2                 # 重试间隔（秒）
+  
+  # OKX API 专用设置
+  okx_connect_timeout: 20        # 连接超时（秒）- 增加到20秒
+  okx_read_timeout: 45           # 读取超时（秒）- 增加到45秒
+  okx_max_retries: 5             # OKX API 最大重试 - 增加到5次
+  okx_retry_delay: 3             # OKX 重试间隔 - 增加到3秒
+  okx_ssl_retry_recreate: 2      # SSL错误多少次后重建Session
+  
+  # 熔断器配置
+  circuit_breaker:
+    failure_threshold: 8         # 连续失败多少次触发熔断 - 增加到8次
+    timeout: 30                  # 熔断后多久重试（秒）
+
+# ============================================================
+# 费用配置
+# Fee Configuration
+# ============================================================
+fees:
+  # 交易费率（OKX Maker: 0.02%, Taker: 0.05%）
+  trade_fee_rate: 0.0008         # 0.08%（综合费率）
+  
+  # 滑点容忍度
+  max_slippage: 0.003            # 0.3%
+  
+  # 现金缓冲比例（避免因费用导致余额不足）
+  cash_buffer_ratio: 1.02        # 102%
+
+# ============================================================
+# 其他配置
+# Miscellaneous
+# ============================================================
+misc:
+  # 是否启用做空
+  enable_short_selling: true
+  
+  # 多空平衡
+  balanced_long_short: true
+  
+  # 默认止盈目标百分比
+  default_profit_target_pct: 0.10
+  
+  # 置信度加成因子
+  confidence_multiplier: 1.2
+  confidence_factor_cap: 1.5
+  
+  # 最小趋势一致性
+  min_trend_alignment: 0.5
+  
+  # 性能分析参数
+  sharpe_ratio_days: 30
+  max_drawdown_history: 1000
+  win_rate_trade_limit: 1000
+
+# ============================================================
+# RSI 阈值配置
+# RSI Thresholds
+# ============================================================
+rsi:
+  oversold: 40                   # 超卖阈值
+  overbought: 60                 # 超买阈值
+  strong_oversold: 35            # 强超卖
+  strong_overbought: 70          # 强超买
+  # 趋势市场中的RSI调整（趋势强时RSI可维持超买超卖区）
+  trend_mode:
+    enabled: true
+    overbought_in_uptrend: 80    # 上升趋势中超买阈值放宽到80
+    oversold_in_downtrend: 25    # 下降趋势中超卖阈值收紧到25
+
+# ============================================================
+# 成交量确认配置
+# Volume Confirmation
+# ============================================================
+volume:
+  # 是否启用成交量确认
+  enabled: true
+  
+  # 缩量上涨惩罚（降低置信度）- 降低以避免过度过滤
+  shrink_penalty: 0.05
+  
+  # 放量突破加分
+  breakout_bonus: 0.08
+  
+  # 缩量判断阈值（当前成交量/平均成交量）
+  shrink_threshold: 0.6
+  
+  # 放量判断阈值
+  breakout_threshold: 1.5
+
+# ============================================================
+# 市场情绪过滤器
+# Market Sentiment Filter
+# ============================================================
+sentiment:
+  # 是否启用情绪过滤
+  enabled: true
+  
+  # 极度恐慌阈值（FGI < 此值）
+  extreme_fear_threshold: 20
+  # 极度恐慌时的操作策略
+  # options: "cautious_long"(谨慎做多), "prefer_short"(偏向做空), "hold"(观望)
+  extreme_fear_action: "cautious_long"
+  
+  # 极度贪婪阈值（FGI > 此值）
+  extreme_greed_threshold: 80
+  # 极度贪婪时的操作策略
+  extreme_greed_action: "prefer_short"
+  
+  # 情绪极端时置信度调整
+  extreme_confidence_penalty: 0.10
+
+# ============================================================
+# 持仓时间管理
+# Position Time Management
+# ============================================================
+position_time:
+  # 是否启用时间止损
+  enabled: true
+  
+  # 持仓超过N小时后启用移动止损
+  trailing_trigger_hours: 8
+  
+  # 移动止损距离（百分比）
+  trailing_distance_pct: 0.02
+  
+  # 最大持仓时间（小时）- 超过则强制平仓
+  max_holding_hours: 48
+  
+  # 长时间横盘时的操作（盈亏在此范围内超过N小时）
+  sideways_threshold_pct: 0.02  # 盈亏在±2%内
+  sideways_hours: 12            # 超过12小时
+  sideways_action: "tighten_stop"  # "tighten_stop"(收紧止损) 或 "close"(平仓)
+
+# ============================================================
+# 交易学习配置
+# Trade Learning Configuration
+# ============================================================
+learning:
+  # 是否启用交易总结学习
+  enabled: true
+  
+  # 用于分析的历史交易数量
+  history_trades_limit: 50
+  
+  # 学习总结更新频率（每N笔交易更新一次）
+  update_frequency: 5
+  
+  # 是否在提示词中包含学习总结
+  include_in_prompt: true
+  
+  # 最低交易数量（低于此值不生成总结）
+  min_trades_for_summary: 10
+  
+  # 分析的指标
+  analyze_metrics:
+    - win_rate              # 胜率
+    - avg_profit_per_trade  # 平均每笔盈利
+    - best_performing_coin  # 表现最好的币种
+    - worst_performing_coin # 表现最差的币种
+    - best_time_pattern     # 最佳交易时段
+    - leverage_performance  # 不同杠杆表现
+    - long_vs_short         # 多空表现对比
+
+# ============================================================
+# 交易质量评分配置
+# Trade Quality Score
+# ============================================================
+quality_score:
+  # 是否启用质量评分过滤
+  enabled: true
+  
+  # 最低质量分（低于此分不交易）
+  min_score: 55
+  
+  # 评分权重（总和=100）
+  weights:
+    confidence: 35         # 置信度权重
+    trend_alignment: 25    # 趋势一致性
+    momentum: 15           # 动量确认
+    volatility: 10         # 波动率评分
+    risk_reward: 10        # 风险回报比
+    volume: 5              # 成交量确认
+

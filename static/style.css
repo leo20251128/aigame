@@ -161,6 +161,280 @@ body {
     background: var(--bg-3);
 }
 
+.btn-danger {
+    background: var(--danger);
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-danger:hover {
+    background: #d93636;
+    box-shadow: var(--shadow-2);
+}
+
+.btn-danger:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.btn-sm {
+    padding: 4px 12px;
+    font-size: 12px;
+}
+
+.positions-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border-1);
+}
+
+/* 交易模式指示器 */
+.trading-mode-indicator {
+    display: flex;
+    align-items: center;
+    margin-right: 12px;
+}
+
+.mode-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.mode-simulation {
+    background: #e8f4fd;
+    color: #1890ff;
+    border: 1px solid #91d5ff;
+}
+
+.mode-real {
+    background: #fff1f0;
+    color: #f5222d;
+    border: 1px solid #ffa39e;
+    animation: pulse-warning 2s infinite;
+}
+
+.mode-real-demo {
+    background: #fff7e6;
+    color: #fa8c16;
+    border: 1px solid #ffd591;
+}
+
+.mode-stopped {
+    background: #f5222d;
+    color: white;
+    border: 1px solid #cf1322;
+    animation: pulse-danger 1s infinite;
+}
+
+@keyframes pulse-warning {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+@keyframes pulse-danger {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.02); }
+}
+
+#emergencyStopBtn {
+    margin-right: 8px;
+}
+
+#emergencyStopBtn.active {
+    background: #52c41a;
+}
+
+#emergencyStopBtn.active:hover {
+    background: #389e0d;
+}
+
+/* OKX 账户信息样式 */
+.okx-account-section {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+}
+
+.okx-account-section .section-header {
+    color: #fff;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.okx-account-info {
+    padding: 12px;
+}
+
+.okx-balance {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.okx-balance-label {
+    color: #a0aec0;
+    font-size: 12px;
+}
+
+.okx-balance-value {
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.okx-balance-value.positive {
+    color: #48bb78;
+}
+
+.okx-balance-value.negative {
+    color: #f56565;
+}
+
+.okx-positions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    margin-bottom: 8px;
+    color: #a0aec0;
+    font-size: 12px;
+}
+
+.okx-positions-header .btn-icon {
+    color: #a0aec0;
+    padding: 4px;
+    width: 24px;
+    height: 24px;
+}
+
+.okx-positions-header .btn-icon:hover {
+    color: #fff;
+}
+
+.okx-positions-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.okx-position-item {
+    background: rgba(255,255,255,0.05);
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 8px;
+}
+
+.okx-position-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.okx-position-coin {
+    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.okx-position-side {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.okx-position-side.long {
+    background: rgba(72, 187, 120, 0.2);
+    color: #48bb78;
+}
+
+.okx-position-side.short {
+    background: rgba(245, 101, 101, 0.2);
+    color: #f56565;
+}
+
+.okx-position-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    font-size: 11px;
+}
+
+.okx-position-detail {
+    display: flex;
+    justify-content: space-between;
+}
+
+.okx-position-detail-label {
+    color: #718096;
+}
+
+.okx-position-detail-value {
+    color: #e2e8f0;
+}
+
+.okx-position-pnl {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.okx-position-pnl-label {
+    color: #718096;
+    font-size: 11px;
+}
+
+.okx-position-pnl-value {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.okx-position-pnl-value.positive {
+    color: #48bb78;
+}
+
+.okx-position-pnl-value.negative {
+    color: #f56565;
+}
+
+.okx-empty {
+    color: #718096;
+    font-size: 12px;
+    text-align: center;
+    padding: 16px;
+}
+
+.okx-error {
+    color: #f56565;
+    font-size: 12px;
+    text-align: center;
+    padding: 12px;
+    background: rgba(245, 101, 101, 0.1);
+    border-radius: 6px;
+}
+
+.okx-loading {
+    color: #a0aec0;
+    font-size: 12px;
+    text-align: center;
+    padding: 16px;
+}
+
 .btn-icon {
     background: transparent;
     color: var(--text-2);

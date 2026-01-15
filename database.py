@@ -230,7 +230,7 @@ class Database:
         
         conn.close()
         
-        return {
+        portfolio = {
             'model_id': model_id,
             'cash': cash,
             'positions': positions,
@@ -240,6 +240,8 @@ class Database:
             'realized_pnl': realized_pnl,
             'unrealized_pnl': unrealized_pnl
         }
+        
+        return portfolio
     
     def close_position(self, model_id: int, coin: str, side: str = 'long'):
         """Close position"""
@@ -251,17 +253,93 @@ class Database:
         conn.commit()
         conn.close()
     
+    def close_all_positions(self, model_id: int, current_prices: Dict = None) -> List[Dict]:
+        """
+        关闭指定模型的所有持仓（一键平仓）
+        
+        Args:
+            model_id: 模型ID
+            current_prices: 当前市场价格 {coin: price}
+            
+        Returns:
+            已平仓的持仓列表，包含盈亏信息
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 获取所有持仓
+        cursor.execute('''
+            SELECT * FROM portfolios WHERE model_id = ? AND quantity > 0
+        ''', (model_id,))
+        positions = [dict(row) for row in cursor.fetchall()]
+        
+        if not positions:
+            conn.close()
+            return []
+        
+        closed_positions = []
+        
+        from trading_config import TradingConfig
+        
+        for pos in positions:
+            coin = pos['coin']
+            quantity = pos['quantity']
+            entry_price = pos['avg_price']
+            side = pos['side']
+            leverage = pos['leverage']
+            
+            # 获取当前价格
+            current_price = current_prices.get(coin, entry_price) if current_prices else entry_price
+            
+            # 计算盈亏
+            if side == 'long':
+                gross_pnl = (current_price - entry_price) * quantity
+            else:
+                gross_pnl = (entry_price - current_price) * quantity
+            
+            # 计算交易费
+            trade_amount = quantity * current_price
+            trade_fee = trade_amount * TradingConfig.TRADE_FEE_RATE
+            net_pnl = gross_pnl - trade_fee
+            
+            # 删除持仓
+            cursor.execute('''
+                DELETE FROM portfolios WHERE model_id = ? AND coin = ? AND side = ?
+            ''', (model_id, coin, side))
+            
+            # 记录平仓交易
+            cursor.execute('''
+                INSERT INTO trades (model_id, coin, signal, quantity, price, leverage, side, pnl, fee)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (model_id, coin, 'close_position', quantity, current_price, leverage, side, net_pnl, trade_fee))
+            
+            closed_positions.append({
+                'coin': coin,
+                'side': side,
+                'quantity': quantity,
+                'entry_price': entry_price,
+                'close_price': current_price,
+                'gross_pnl': gross_pnl,
+                'fee': trade_fee,
+                'net_pnl': net_pnl
+            })
+        
+        conn.commit()
+        conn.close()
+        
+        return closed_positions
+    
     # ============ Trade Records ============
     
     def add_trade(self, model_id: int, coin: str, signal: str, quantity: float,
-              price: float, leverage: int = 1, side: str = 'long', pnl: float = 0, fee: float = 0):  # 新增fee参数
+              price: float, leverage: int = 1, side: str = 'long', pnl: float = 0, fee: float = 0):
         """Add trade record with fee"""
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO trades (model_id, coin, signal, quantity, price, leverage, side, pnl, fee)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)  # 新增fee字段
-        ''', (model_id, coin, signal, quantity, price, leverage, side, pnl, fee))  # 传入fee值
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (model_id, coin, signal, quantity, price, leverage, side, pnl, fee))
         conn.commit()
         conn.close()
     

@@ -9,6 +9,8 @@ class TradingApp {
             trades: null
         };
         this.isChinese = this.detectLanguage();
+        this.isChartInteracting = false;  // 用户是否正在与图表交互
+        this.interactionTimeout = null;   // 交互超时计时器
         this.init();
     }
 
@@ -63,6 +65,7 @@ class TradingApp {
         this.initEventListeners();
         this.loadModels();
         this.loadMarketPrices();
+        this.loadTradingStatus();  // 加载交易状态
         this.startRefreshCycles();
         // Check for updates after initialization (with delay)
         setTimeout(() => this.checkForUpdates(true), 3000);
@@ -101,6 +104,15 @@ class TradingApp {
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab));
         });
+
+        // 一键平仓按钮
+        document.getElementById('closeAllPositionsBtn').addEventListener('click', () => this.closeAllPositions());
+
+        // 紧急停止按钮
+        document.getElementById('emergencyStopBtn').addEventListener('click', () => this.toggleEmergencyStop());
+
+        // OKX 刷新按钮
+        document.getElementById('refreshOkxBtn').addEventListener('click', () => this.loadOkxAccount());
     }
 
     async loadModels() {
@@ -286,11 +298,17 @@ class TradingApp {
         }
 
         const option = {
+            title: {
+                text: '账户价值走势（可拖动缩放查看所有历史）',
+                left: 'center',
+                top: 5,
+                textStyle: { color: '#1d2129', fontSize: 14, fontWeight: 'normal' }
+            },
             grid: {
                 left: '60',
                 right: '20',
-                bottom: '40',
-                top: '20',
+                bottom: '80',
+                top: '40',
                 containLabel: false
             },
             xAxis: {
@@ -311,6 +329,32 @@ class TradingApp {
                 },
                 splitLine: { lineStyle: { color: '#f2f3f5' } }
             },
+            // 添加缩放功能
+            dataZoom: [
+                {
+                    type: 'inside',  // 支持鼠标滚轮缩放
+                    start: Math.max(0, 100 - (50 / data.length * 100)),  // 默认显示最近50个数据点或全部
+                    end: 100,
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
+                    moveOnMouseWheel: false
+                },
+                {
+                    type: 'slider',  // 底部滑动条
+                    start: Math.max(0, 100 - (50 / data.length * 100)),
+                    end: 100,
+                    height: 20,
+                    bottom: 10,
+                    handleSize: '80%',
+                    handleStyle: {
+                        color: '#3370ff'
+                    },
+                    textStyle: {
+                        color: '#86909c'
+                    },
+                    borderColor: '#e5e6eb'
+                }
+            ],
             series: [{
                 type: 'line',
                 data: data.map(d => d.value),
@@ -342,6 +386,11 @@ class TradingApp {
         };
 
         this.chart.setOption(option);
+
+        // 监听缩放事件，暂停自动刷新
+        this.chart.on('datazoom', () => {
+            this.onChartInteraction();
+        });
 
         setTimeout(() => {
             if (this.chart) {
@@ -436,15 +485,15 @@ class TradingApp {
 
         const option = {
             title: {
-                text: '模型表现对比',
+                text: '模型表现对比（可拖动缩放查看所有历史）',
                 left: 'center',
                 top: 10,
-                textStyle: { color: '#1d2129', fontSize: 16, fontWeight: 'normal' }
+                textStyle: { color: '#1d2129', fontSize: 14, fontWeight: 'normal' }
             },
             grid: {
                 left: '60',
                 right: '20',
-                bottom: '80',
+                bottom: '120',
                 top: '50',
                 containLabel: false
             },
@@ -468,10 +517,36 @@ class TradingApp {
             },
             legend: {
                 data: chartData.map(model => model.model_name),
-                bottom: 10,
+                bottom: 50,
                 itemGap: 20,
                 textStyle: { color: '#1d2129', fontSize: 12 }
             },
+            // 添加缩放功能
+            dataZoom: [
+                {
+                    type: 'inside',  // 支持鼠标滚轮缩放
+                    start: Math.max(0, 100 - (50 / formattedTimeAxis.length * 100)),
+                    end: 100,
+                    zoomOnMouseWheel: true,
+                    moveOnMouseMove: true,
+                    moveOnMouseWheel: false
+                },
+                {
+                    type: 'slider',  // 底部滑动条
+                    start: Math.max(0, 100 - (50 / formattedTimeAxis.length * 100)),
+                    end: 100,
+                    height: 20,
+                    bottom: 10,
+                    handleSize: '80%',
+                    handleStyle: {
+                        color: '#3370ff'
+                    },
+                    textStyle: {
+                        color: '#86909c'
+                    },
+                    borderColor: '#e5e6eb'
+                }
+            ],
             series: series,
             tooltip: {
                 trigger: 'axis',
@@ -493,6 +568,11 @@ class TradingApp {
 
         this.chart.setOption(option);
 
+        // 监听缩放事件，暂停自动刷新
+        this.chart.on('datazoom', () => {
+            this.onChartInteraction();
+        });
+
         setTimeout(() => {
             if (this.chart) {
                 this.chart.resize();
@@ -500,8 +580,99 @@ class TradingApp {
         }, 100);
     }
 
+    onChartInteraction() {
+        // 用户开始与图表交互，暂停自动刷新
+        this.isChartInteracting = true;
+        this.showInteractionNotice();
+
+        // 清除之前的超时计时器
+        if (this.interactionTimeout) {
+            clearTimeout(this.interactionTimeout);
+        }
+
+        // 30秒无操作后自动恢复刷新
+        this.interactionTimeout = setTimeout(() => {
+            this.resumeAutoRefresh();
+        }, 30000);
+    }
+
+    showInteractionNotice() {
+        // 显示提示信息
+        let notice = document.getElementById('interactionNotice');
+        if (!notice) {
+            notice = document.createElement('div');
+            notice.id = 'interactionNotice';
+            notice.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(51, 112, 255, 0.95);
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 10000;
+                font-size: 14px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            `;
+            notice.innerHTML = `
+                <span>📊 图表交互模式 - 自动刷新已暂停</span>
+                <button onclick="app.resumeAutoRefresh()" style="
+                    background: white;
+                    color: #3370ff;
+                    border: none;
+                    padding: 4px 12px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    font-weight: 500;
+                ">恢复刷新</button>
+            `;
+            document.body.appendChild(notice);
+        }
+        notice.style.display = 'flex';
+    }
+
+    hideInteractionNotice() {
+        const notice = document.getElementById('interactionNotice');
+        if (notice) {
+            notice.style.display = 'none';
+        }
+    }
+
+    resumeAutoRefresh() {
+        this.isChartInteracting = false;
+        this.hideInteractionNotice();
+        
+        if (this.interactionTimeout) {
+            clearTimeout(this.interactionTimeout);
+            this.interactionTimeout = null;
+        }
+
+        // 立即刷新一次数据
+        if (this.isAggregatedView || this.currentModelId) {
+            if (this.isAggregatedView) {
+                this.loadAggregatedData();
+            } else {
+                this.loadModelData();
+            }
+        }
+    }
+
     updatePositions(positions, isAggregated = false) {
         const tbody = document.getElementById('positionsBody');
+        const closeAllBtn = document.getElementById('closeAllPositionsBtn');
+
+        // 控制一键平仓按钮的显示
+        if (closeAllBtn) {
+            if (isAggregated) {
+                closeAllBtn.style.display = 'none';
+            } else {
+                closeAllBtn.style.display = positions.length > 0 ? 'inline-flex' : 'none';
+            }
+        }
 
         if (positions.length === 0) {
             if (isAggregated) {
@@ -893,11 +1064,341 @@ class TradingApp {
         }
     }
 
+    async closeAllPositions() {
+        // 检查是否选择了模型
+        if (!this.currentModelId) {
+            alert('请先选择一个交易模型');
+            return;
+        }
+
+        // 聚合视图不支持一键平仓
+        if (this.isAggregatedView) {
+            alert('聚合视图不支持一键平仓，请选择具体的交易模型');
+            return;
+        }
+
+        // 确认对话框
+        if (!confirm('确定要平仓所有持仓吗？此操作不可撤销！')) {
+            return;
+        }
+
+        const btn = document.getElementById('closeAllPositionsBtn');
+        const originalText = btn.innerHTML;
+        
+        try {
+            // 禁用按钮，显示加载状态
+            btn.disabled = true;
+            btn.innerHTML = '<i class="bi bi-hourglass-split"></i> 平仓中...';
+
+            const response = await fetch(`/api/models/${this.currentModelId}/close-all-positions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                // 显示平仓结果
+                let message = result.message;
+                if (result.closed_positions && result.closed_positions.length > 0) {
+                    message += `\n\n总盈亏: $${result.total_net_pnl.toFixed(2)}`;
+                    message += `\n总费用: $${result.total_fee.toFixed(2)}`;
+                }
+                alert(message);
+
+                // 刷新数据
+                await this.loadModelData();
+            } else {
+                alert('平仓失败: ' + (result.error || '未知错误'));
+            }
+        } catch (error) {
+            console.error('Failed to close all positions:', error);
+            alert('平仓失败: ' + error.message);
+        } finally {
+            // 恢复按钮状态
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+
     clearForm() {
         document.getElementById('modelProvider').value = '';
         document.getElementById('modelIdentifier').value = '';
         document.getElementById('modelName').value = '';
         document.getElementById('initialCapital').value = '100000';
+    }
+
+    async loadTradingStatus() {
+        /**
+         * 加载交易系统状态
+         */
+        try {
+            const response = await fetch('/api/trading/status');
+            const status = await response.json();
+            this.updateTradingModeDisplay(status);
+            
+            // 如果是真实交易模式，显示OKX账户并加载数据
+            if (status.mode === '真实交易') {
+                document.getElementById('okxAccountSection').style.display = 'block';
+                this.loadOkxAccount();
+            } else {
+                document.getElementById('okxAccountSection').style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Failed to load trading status:', error);
+        }
+    }
+
+    async loadOkxAccount() {
+        /**
+         * 加载 OKX 账户信息
+         */
+        const listEl = document.getElementById('okxPositionsList');
+        if (!listEl) {
+            console.error('OKX positions list element not found');
+            return;
+        }
+        
+        listEl.innerHTML = '<div class="okx-loading">加载中...</div>';
+        
+        try {
+            // 创建超时控制器（兼容性更好的方式）
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
+            
+            const response = await fetch('/api/okx/account', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                signal: controller.signal
+            }).catch(err => {
+                clearTimeout(timeoutId);
+                // 处理网络错误
+                if (err.name === 'AbortError') {
+                    throw new Error('请求超时（10秒），请检查网络连接或稍后重试');
+                } else if (err.name === 'TypeError' && (err.message.includes('fetch') || err.message.includes('Failed to fetch'))) {
+                    throw new Error('无法连接到服务器，请确认后端服务正在运行（http://localhost:5000）。如果是首次启动，请等待几秒后刷新页面。');
+                }
+                throw err;
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response) {
+                throw new Error('服务器无响应');
+            }
+            
+            // 检查响应状态
+            if (!response.ok) {
+                // 尝试解析错误响应
+                let errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    errorMsg = errorData.error || errorMsg;
+                } catch (e) {
+                    // 如果无法解析 JSON，使用状态文本
+                }
+                throw new Error(errorMsg);
+            }
+            
+            const data = await response.json();
+            
+            // 检查是否有错误
+            if (!data.success || data.error) {
+                const errorMsg = data.error || '获取账户信息失败';
+                document.getElementById('okxTotalEquity').textContent = '--';
+                document.getElementById('okxAvailableBalance').textContent = '--';
+                listEl.innerHTML = `<div class="okx-error">${errorMsg}</div>`;
+                console.error('OKX账户加载失败:', errorMsg);
+                return;
+            }
+            
+            // 更新余额显示
+            const balance = data.balance || {};
+            if (balance.success !== false) {
+                const totalEquity = parseFloat(balance.total_equity) || 0;
+                const availableBalance = parseFloat(balance.available_balance) || 0;
+                
+                document.getElementById('okxTotalEquity').textContent = 
+                    `$${totalEquity.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                document.getElementById('okxAvailableBalance').textContent = 
+                    `$${availableBalance.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            } else {
+                document.getElementById('okxTotalEquity').textContent = '--';
+                document.getElementById('okxAvailableBalance').textContent = '--';
+                if (balance.error) {
+                    console.warn('余额获取失败:', balance.error);
+                }
+            }
+            
+            // 更新持仓列表
+            const positions = data.positions || [];
+            if (positions.length === 0) {
+                listEl.innerHTML = '<div class="okx-empty">暂无持仓</div>';
+                return;
+            }
+            
+            listEl.innerHTML = positions.map(pos => {
+                const pnlClass = pos.unrealized_pnl >= 0 ? 'positive' : 'negative';
+                const pnlSign = pos.unrealized_pnl >= 0 ? '+' : '';
+                const pnlPct = (pos.unrealized_pnl_ratio * 100).toFixed(2);
+                
+                return `
+                    <div class="okx-position-item">
+                        <div class="okx-position-header">
+                            <span class="okx-position-coin">${pos.coin}</span>
+                            <span class="okx-position-side ${pos.side}">${pos.side === 'long' ? '多' : '空'}</span>
+                        </div>
+                        <div class="okx-position-details">
+                            <div class="okx-position-detail">
+                                <span class="okx-position-detail-label">数量</span>
+                                <span class="okx-position-detail-value">${pos.quantity}</span>
+                            </div>
+                            <div class="okx-position-detail">
+                                <span class="okx-position-detail-label">杠杆</span>
+                                <span class="okx-position-detail-value">${pos.leverage}x</span>
+                            </div>
+                            <div class="okx-position-detail">
+                                <span class="okx-position-detail-label">开仓价</span>
+                                <span class="okx-position-detail-value">$${pos.avg_price.toFixed(2)}</span>
+                            </div>
+                            <div class="okx-position-detail">
+                                <span class="okx-position-detail-label">保证金</span>
+                                <span class="okx-position-detail-value">$${pos.margin.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div class="okx-position-pnl">
+                            <span class="okx-position-pnl-label">未实现盈亏</span>
+                            <span class="okx-position-pnl-value ${pnlClass}">
+                                ${pnlSign}$${Math.abs(pos.unrealized_pnl).toFixed(2)} (${pnlSign}${pnlPct}%)
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+        } catch (error) {
+            console.error('Failed to load OKX account:', error);
+            
+            // 设置默认值
+            const totalEquityEl = document.getElementById('okxTotalEquity');
+            const availableBalanceEl = document.getElementById('okxAvailableBalance');
+            
+            if (totalEquityEl) totalEquityEl.textContent = '--';
+            if (availableBalanceEl) availableBalanceEl.textContent = '--';
+            
+            // 显示详细的错误信息
+            let errorMessage = '加载失败';
+            
+            if (error.message) {
+                errorMessage = error.message;
+            } else if (error.name === 'TypeError') {
+                errorMessage = '网络连接失败，请检查服务器是否正常运行';
+            } else if (error.name === 'AbortError') {
+                errorMessage = '请求超时，请稍后重试';
+            } else {
+                errorMessage = `加载失败: ${error.toString()}`;
+            }
+            
+            if (listEl) {
+                listEl.innerHTML = `<div class="okx-error">${errorMessage}</div>`;
+            }
+        }
+    }
+
+    updateTradingModeDisplay(status) {
+        /**
+         * 更新交易模式显示
+         */
+        const badge = document.getElementById('tradingModeBadge');
+        const btn = document.getElementById('emergencyStopBtn');
+        
+        if (!badge) return;
+
+        // 移除所有模式类
+        badge.classList.remove('mode-simulation', 'mode-real', 'mode-real-demo', 'mode-stopped');
+        
+        if (status.emergency_stop) {
+            badge.textContent = '已停止';
+            badge.classList.add('mode-stopped');
+            btn.innerHTML = '<i class="bi bi-play-circle"></i> 恢复交易';
+            btn.classList.add('active');
+        } else if (status.mode === '真实交易') {
+            if (status.okx_demo) {
+                badge.textContent = '真实交易(模拟盘)';
+                badge.classList.add('mode-real-demo');
+            } else {
+                badge.textContent = '真实交易(实盘)';
+                badge.classList.add('mode-real');
+            }
+            btn.innerHTML = '<i class="bi bi-stop-circle"></i> 紧急停止';
+            btn.classList.remove('active');
+        } else {
+            badge.textContent = '模拟交易';
+            badge.classList.add('mode-simulation');
+            btn.innerHTML = '<i class="bi bi-stop-circle"></i> 紧急停止';
+            btn.classList.remove('active');
+        }
+    }
+
+    async toggleEmergencyStop() {
+        /**
+         * 切换紧急停止状态
+         */
+        const btn = document.getElementById('emergencyStopBtn');
+        const isActive = btn.classList.contains('active');
+        
+        // 如果是恢复操作，需要确认
+        if (isActive) {
+            if (!confirm('确定要恢复交易吗？')) return;
+        } else {
+            // 紧急停止确认
+            const closePositions = confirm('是否同时平仓所有持仓？\n\n点击"确定"停止交易并平仓\n点击"取消"仅停止交易');
+            
+            try {
+                const response = await fetch('/api/trading/emergency-stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'stop',
+                        close_positions: closePositions
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    alert(result.message);
+                    this.loadTradingStatus();
+                } else {
+                    alert('操作失败: ' + result.error);
+                }
+            } catch (error) {
+                alert('操作失败: ' + error.message);
+            }
+            return;
+        }
+        
+        // 恢复交易
+        try {
+            const response = await fetch('/api/trading/emergency-stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'resume' })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                alert(result.message);
+                this.loadTradingStatus();
+            } else {
+                alert('操作失败: ' + result.error);
+            }
+        } catch (error) {
+            alert('操作失败: ' + error.message);
+        }
     }
 
     async refresh() {
@@ -914,6 +1415,12 @@ class TradingApp {
         }, 5000);
 
         this.refreshIntervals.portfolio = setInterval(() => {
+            // 如果用户正在与图表交互，跳过自动刷新
+            if (this.isChartInteracting) {
+                console.log('用户正在查看图表，跳过自动刷新');
+                return;
+            }
+
             if (this.isAggregatedView || this.currentModelId) {
                 if (this.isAggregatedView) {
                     this.loadAggregatedData();
@@ -922,6 +1429,14 @@ class TradingApp {
                 }
             }
         }, 10000);
+
+        // OKX 账户刷新（每30秒）
+        this.refreshIntervals.okx = setInterval(() => {
+            const okxSection = document.getElementById('okxAccountSection');
+            if (okxSection && okxSection.style.display !== 'none') {
+                this.loadOkxAccount();
+            }
+        }, 30000);
     }
 
     stopRefreshCycles() {
