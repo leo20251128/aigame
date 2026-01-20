@@ -83,7 +83,7 @@ ai:
   # 最低置信度阈值（0-1）
   # 只有 AI 判断置信度超过此值才会执行交易
   # 建议：0.70-0.75，不要太高以免错过机会
-  min_confidence: 0.75
+  min_confidence: 0.70              # 降低以增加做空机会
   
   # 最大同时持仓数量
   # 小账户（<$500）建议：2，集中资金
@@ -97,9 +97,9 @@ ai:
   # 动态置信度调整（根据市场波动率）
   dynamic_confidence:
     enabled: true
-    low_volatility_threshold: 0.70    # 低波动时可降低阈值（市场稳定）
-    normal_threshold: 0.75            # 正常情况
-    high_volatility_threshold: 0.80   # 高波动时需要更高置信度（更谨慎）
+    low_volatility_threshold: 0.65    # 低波动时降低阈值更多
+    normal_threshold: 0.70            # 正常情况降低到0.70
+    high_volatility_threshold: 0.75   # 高波动保持0.75（避免过度限制做空）
     volatility_boundary: 50           # 波动率分界线
   
   # 允许满仓时调整持仓（平差仓开好仓）
@@ -160,6 +160,23 @@ risk:
     - [60, 1.0]      # 正常波动
     - [80, 0.9]      # 较高波动，略微缩小
     - [999, 0.8]     # 高波动，适度缩小（不过分保守）
+
+# ============================================================
+# 做空激励配置
+# Short Selling Incentive
+# ============================================================
+short_selling:
+  # 是否启用做空激励机制
+  enabled: true
+  
+  # 做空信号置信度加成（直接提升做空信号置信度）
+  confidence_boost: 0.05
+  
+  # 明确下跌趋势时额外加成
+  downtrend_boost: 0.08
+  
+  # 做空风险回报比（可以低于做多，因为下跌通常更快）
+  risk_reward_ratio: 1.8
 
 # ============================================================
 # 止盈止损配置
@@ -289,15 +306,15 @@ misc:
 # RSI Thresholds
 # ============================================================
 rsi:
-  oversold: 40                   # 超卖阈值
-  overbought: 60                 # 超买阈值
-  strong_oversold: 35            # 强超卖
-  strong_overbought: 70          # 强超买
+  oversold: 30                   # 超卖阈值（降低以减少假做多信号）
+  overbought: 70                 # 超买阈值（提高以增强做空信号）
+  strong_oversold: 25            # 强超卖
+  strong_overbought: 75          # 强超买
   # 趋势市场中的RSI调整（趋势强时RSI可维持超买超卖区）
   trend_mode:
     enabled: true
     overbought_in_uptrend: 80    # 上升趋势中超买阈值放宽到80
-    oversold_in_downtrend: 25    # 下降趋势中超卖阈值收紧到25
+    oversold_in_downtrend: 20    # 下降趋势中超卖阈值收紧到20（更严格）
 
 # ============================================================
 # 成交量确认配置
@@ -328,18 +345,18 @@ sentiment:
   enabled: true
   
   # 极度恐慌阈值（FGI < 此值）
-  extreme_fear_threshold: 20
+  extreme_fear_threshold: 25
   # 极度恐慌时的操作策略
   # options: "cautious_long"(谨慎做多), "prefer_short"(偏向做空), "hold"(观望)
-  extreme_fear_action: "cautious_long"
+  extreme_fear_action: "hold"             # 改为观望，减少恐慌时的做多偏好
   
   # 极度贪婪阈值（FGI > 此值）
-  extreme_greed_threshold: 80
+  extreme_greed_threshold: 70             # 降低阈值，更早识别贪婪
   # 极度贪婪时的操作策略
   extreme_greed_action: "prefer_short"
   
   # 情绪极端时置信度调整
-  extreme_confidence_penalty: 0.10
+  extreme_confidence_penalty: 0.05        # 减少惩罚，避免过度限制交易
 
 # ============================================================
 # 持仓时间管理
@@ -362,6 +379,45 @@ position_time:
   sideways_threshold_pct: 0.02  # 盈亏在±2%内
   sideways_hours: 12            # 超过12小时
   sideways_action: "tighten_stop"  # "tighten_stop"(收紧止损) 或 "close"(平仓)
+
+# ============================================================
+# K线形态识别配置
+# Candlestick Pattern Recognition
+# ============================================================
+pattern_recognition:
+  # 是否启用K线形态识别
+  enabled: true
+  
+  # 形态识别使用的时间周期
+  timeframe: "15m"  # 可选: 3m, 5m, 15m, 1h
+  
+  # K线数量（用于形态分析）
+  candle_count: 5
+  
+  # 形态权重（对置信度的影响）
+  pattern_weights:
+    # 单K线形态
+    hammer: 0.12              # 锤子线（看涨反转）
+    hanging_man: 0.12         # 上吊线（看跌反转）
+    shooting_star: 0.12       # 射击之星（看跌反转）
+    inverted_hammer: 0.10     # 倒锤子（看涨反转）
+    doji: 0.08                # 十字星（犹豫）
+    
+    # 双K线形态
+    bullish_engulfing: 0.15   # 看涨吞没
+    bearish_engulfing: 0.15   # 看跌吞没
+    
+    # 三K线形态
+    morning_star: 0.18        # 早晨之星（强看涨）
+    evening_star: 0.18        # 黄昏之星（强看跌）
+    three_white_soldiers: 0.20  # 三只白兵（强看涨）
+    three_black_crows: 0.20   # 三只乌鸦（强看跌）
+  
+  # 最大置信度调整（防止过度依赖形态）
+  max_confidence_adjustment: 0.15
+  
+  # 最小形态强度阈值（低于此值忽略）
+  min_pattern_strength: 0.3
 
 # ============================================================
 # 交易学习配置

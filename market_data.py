@@ -337,7 +337,11 @@ class MarketDataFetcher:
             
             # 解析K线数据: [timestamp, open, high, low, close, volume, ...]
             prices = [float(k[4]) for k in klines]  # close prices
+            opens = [float(k[1]) for k in klines]   # open prices
+            highs = [float(k[2]) for k in klines]   # high prices
+            lows = [float(k[3]) for k in klines]    # low prices
             volumes = [float(k[5]) for k in klines]
+            timestamps = [int(k[0]) for k in klines]
             
             # 计算技术指标
             ema20 = self._calculate_ema_series(prices, 20)
@@ -348,6 +352,10 @@ class MarketDataFetcher:
             # 只返回最近limit个数据点（即使指标数量不足也返回可用数据）
             result = {
                 'prices': [round(p, 4) for p in prices[-limit:]],
+                'opens': [round(o, 4) for o in opens[-limit:]],
+                'highs': [round(h, 4) for h in highs[-limit:]],
+                'lows': [round(l, 4) for l in lows[-limit:]],
+                'timestamps': timestamps[-limit:],
                 'volumes': [round(v, 2) for v in volumes[-limit:]],
                 'ema20': [round(e, 4) for e in ema20[-limit:]] if ema20 else [],
                 'rsi7': [round(r, 1) for r in rsi7[-limit:]] if rsi7 else [],

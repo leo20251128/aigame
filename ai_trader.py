@@ -11,6 +11,7 @@ import logging
 from circuit_breaker import circuit_manager
 from risk_manager import DynamicRiskManager
 from trading_config import TradingConfig
+from pattern_recognition import CandlePattern, PATTERN_NAMES_ZH
 
 # Prompt 日志目录
 PROMPT_LOG_DIR = Path(__file__).parent / 'logs' / 'prompts'
@@ -72,6 +73,9 @@ class AITrader:
         self.logger = logging.getLogger(__name__)
         self.db = db  # 用于获取历史数据
         self.market_fetcher = market_fetcher  # 用于获取市场情绪数据
+        
+        # 初始化K线形态识别器
+        self.pattern_detector = CandlePattern()
         
         # 记录交易开始时间（仅第一次初始化时设置）
         if AITrader._trading_start_time is None:
@@ -649,11 +653,88 @@ class AITrader:
                 self.logger.info(f"[VOLUME] {coin}: 放量信号，置信度调整 {confidence:.2f} → {adjusted_confidence:.2f}")
             
             # ============================================================
-            # 策略优化3: 情绪过滤器
+            # 策略优化3: 做空激励机制
+            # ============================================================
+            if signal == 'sell_to_enter' and TradingConfig.SHORT_SELLING_ENABLED:
+                # 基础做空置信度提升
+                short_boost = TradingConfig.SHORT_CONFIDENCE_BOOST
+                
+                # 下跌趋势额外加成
+                is_downtrend = trend_alignment < -0.6
+                if is_downtrend:
+                    short_boost += TradingConfig.SHORT_DOWNTREND_BOOST
+                    self.logger.info(f"[SHORT] {coin}: 明确下跌趋势，置信度+{TradingConfig.SHORT_DOWNTREND_BOOST:.2f}")
+                
+                adjusted_confidence += short_boost
+                self.logger.info(f"[SHORT] {coin}: 做空激励，置信度调整 {confidence:.2f} → {adjusted_confidence:.2f}")
+            
+            # ============================================================
+            # 策略优化3.5: K线形态识别调整
+            # ============================================================
+            if TradingConfig.PATTERN_RECOGNITION_ENABLED and hasattr(self, 'market_fetcher') and self.market_fetcher:
+                try:
+                    # 获取日内K线数据用于形态识别
+                    intraday_data = self.market_fetcher.get_intraday_klines(coin, interval='15m', limit=5)
+                    
+                    if intraday_data and intraday_data.get('prices'):
+                        # 构建K线数据
+                        candles = []
+                        prices = intraday_data.get('prices', [])
+                        opens = intraday_data.get('opens', [])
+                        highs = intraday_data.get('highs', [])
+                        lows = intraday_data.get('lows', [])
+                        
+                        for i in range(len(prices)):
+                            if i < len(opens) and i < len(highs) and i < len(lows):
+                                candles.append({
+                                    'open': opens[i],
+                                    'high': highs[i],
+                                    'low': lows[i],
+                                    'close': prices[i]
+                                })
+                        
+                        if len(candles) >= 1:
+                            # 判断趋势
+                            if trend_alignment > 0.6:
+                                trend = 'uptrend'
+                            elif trend_alignment < -0.6:
+                                trend = 'downtrend'
+                            else:
+                                trend = 'neutral'
+                            
+                            # 分析形态
+                            pattern_result = self.pattern_detector.analyze_patterns(candles, trend)
+                            
+                            pattern_signal = pattern_result.get('signal', 'neutral')
+                            pattern_adjustment = pattern_result.get('confidence_adjustment', 0.0)
+                            patterns_detected = pattern_result.get('patterns', [])
+                            
+                            # 根据形态信号与交易信号的一致性调整置信度
+                            if signal == 'buy_to_enter' and pattern_signal == 'bullish':
+                                adjusted_confidence += pattern_adjustment
+                                pattern_names = ', '.join([f"{PATTERN_NAMES_ZH.get(p[0], p[0])}({p[1]:.2f})" for p in patterns_detected])
+                                self.logger.info(f"[PATTERN] {coin}: 看涨形态匹配 [{pattern_names}]，置信度+{pattern_adjustment:.3f}")
+                            elif signal == 'sell_to_enter' and pattern_signal == 'bearish':
+                                adjusted_confidence += abs(pattern_adjustment)
+                                pattern_names = ', '.join([f"{PATTERN_NAMES_ZH.get(p[0], p[0])}({p[1]:.2f})" for p in patterns_detected])
+                                self.logger.info(f"[PATTERN] {coin}: 看跌形态匹配 [{pattern_names}]，置信度+{abs(pattern_adjustment):.3f}")
+                            elif signal == 'buy_to_enter' and pattern_signal == 'bearish':
+                                # 形态与信号矛盾，减少置信度
+                                adjusted_confidence += pattern_adjustment  # pattern_adjustment 为负
+                                self.logger.info(f"[PATTERN] {coin}: 看跌形态与做多信号矛盾，置信度{pattern_adjustment:.3f}")
+                            elif signal == 'sell_to_enter' and pattern_signal == 'bullish':
+                                adjusted_confidence -= pattern_adjustment  # 减少做空置信度
+                                self.logger.info(f"[PATTERN] {coin}: 看涨形态与做空信号矛盾，置信度-{pattern_adjustment:.3f}")
+                            
+                except Exception as e:
+                    self.logger.warning(f"[PATTERN] {coin}: 形态识别失败 - {e}")
+            
+            # ============================================================
+            # 策略优化4: 情绪过滤器
             # ============================================================
             if sentiment_action != 'normal':
                 # 极端情绪时的信号过滤
-                if sentiment_action == 'cautious_long' and signal == 'buy_to_enter':
+                if sentiment_action == 'hold' and signal == 'buy_to_enter':
                     # 极度恐慌时做多需要更高置信度
                     adjusted_confidence -= sentiment_penalty
                     self.logger.info(f"[SENTIMENT] 极度恐慌(FGI={fng_index:.0f})，做多置信度-{sentiment_penalty:.0%}")
@@ -667,7 +748,7 @@ class AITrader:
                     self.logger.info(f"[SENTIMENT] 极度贪婪(FGI={fng_index:.0f})，做空置信度+{sentiment_penalty*0.5:.0%}")
             
             # ============================================================
-            # 策略优化4: 动态RSI阈值
+            # 策略优化5: 动态RSI阈值
             # ============================================================
             is_uptrend = trend_alignment > 0.6
             rsi_overbought = TradingConfig.get_rsi_threshold(is_uptrend, 'overbought')
@@ -957,7 +1038,7 @@ class AITrader:
 
 # 风险管理（强制要求）
 每笔交易必须指定：
-- profit_target: 止盈价（盈亏比≥2:1）
+- profit_target: 止盈价（盈亏比≥2:1，做空可适当放宽至≥1.8:1）
 - stop_loss: 止损价（限制单笔亏损≤账户3%）
 - confidence: 置信度(0-1)
 
@@ -969,21 +1050,36 @@ class AITrader:
 # 技术指标解读
 - EMA: 价格>EMA=上涨趋势, 价格<EMA=下跌趋势
 - MACD: 正值=看涨动量, 负值=看跌动量; 金叉=买入信号, 死叉=卖出信号
-- RSI: >70超买(可能回调), <30超卖(可能反弹), 40-60中性
+- RSI: >70超买(考虑做空), <30超卖(考虑做多), 40-60中性
 - ATR: 越高波动越大（需要更宽止损）
+- 资金费率: 正值过高=多头拥挤(考虑做空), 负值过低=空头拥挤(考虑做多)
 
 # 核心原则
 1. 资金保护第一：保护本金比追逐收益更重要
 2. 纪律高于情绪：严格执行止盈止损
 3. 质量高于数量：少量高确信交易胜过大量低质量交易
 4. 适应波动：根据市场条件调整仓位
-5. 顺势而为：不要逆势操作
+5. 多空平衡：做多和做空是平等的盈利机会，下跌趋势同样可获利
+6. 顺势而为：上涨趋势做多，下跌趋势做空
+
+# 做空时机（重点关注）
+✅ 优质做空机会识别：
+- RSI > 70 且开始回落（超买回调）
+- MACD死叉（看跌信号）
+- 价格跌破EMA20且EMA20拐头向下（趋势转空）
+- 资金费率长期正值且过高（多头过度拥挤）
+- 市场情绪极度贪婪（FGI > 70）
+- 成交量放大配合价格下跌（空头主导）
+- 下降趋势中的反弹（做空反弹）
+
+⚠️ 重要：下跌市场中做空与上涨市场中做多盈利能力相同，切勿因心理偏好而忽视做空机会
 
 # 常见陷阱
 ⚠️ 过度交易：频繁交易会被手续费吃掉利润
 ⚠️ 报复交易：亏损后加仓想回本
 ⚠️ 过度杠杆：高杠杆放大亏损
 ⚠️ 忽视相关性：BTC通常领涨领跌
+⚠️ 做空恐惧：不敢在明确下跌趋势中做空，错失盈利机会
 
 # 输出格式
 返回纯JSON，格式如下：
@@ -1327,6 +1423,53 @@ class AITrader:
 - MACD(4h): {h4_data.get('macd', [])}
 - RSI14(4h): {h4_data.get('rsi14', [])}
 """
+            
+            # K线形态识别
+            if TradingConfig.PATTERN_RECOGNITION_ENABLED and intraday_data and intraday_data.get('prices'):
+                try:
+                    # 使用15分钟K线识别形态（更稳定）
+                    pattern_data = self.market_fetcher.get_intraday_klines(coin, interval='15m', limit=5)
+                    if pattern_data and pattern_data.get('prices'):
+                        candles = []
+                        prices = pattern_data.get('prices', [])
+                        opens = pattern_data.get('opens', [])
+                        highs = pattern_data.get('highs', [])
+                        lows = pattern_data.get('lows', [])
+                        
+                        for i in range(len(prices)):
+                            if i < len(opens) and i < len(highs) and i < len(lows):
+                                candles.append({
+                                    'open': opens[i],
+                                    'high': highs[i],
+                                    'low': lows[i],
+                                    'close': prices[i]
+                                })
+                        
+                        if len(candles) >= 1:
+                            # 判断趋势
+                            if trend_alignment > 0.6:
+                                trend = 'uptrend'
+                            elif trend_alignment < -0.6:
+                                trend = 'downtrend'
+                            else:
+                                trend = 'neutral'
+                            
+                            pattern_result = self.pattern_detector.analyze_patterns(candles, trend)
+                            patterns_detected = pattern_result.get('patterns', [])
+                            
+                            if patterns_detected:
+                                pattern_signal = pattern_result.get('signal', 'neutral')
+                                signal_emoji = "🟢" if pattern_signal == 'bullish' else ("🔴" if pattern_signal == 'bearish' else "⚪")
+                                pattern_names = ', '.join([f"{PATTERN_NAMES_ZH.get(p[0], p[0])}({p[1]:.2f})" for p in patterns_detected])
+                                
+                                prompt += f"""
+**K线形态识别 (15分钟):**
+- 识别到: {pattern_names}
+- 信号: {signal_emoji} {pattern_signal.upper()}
+- 置信度影响: {pattern_result.get('confidence_adjustment', 0.0):+.3f}
+"""
+                except Exception as e:
+                    self.logger.warning(f"[{coin}] K线形态识别失败: {e}")
             
             prompt += """
 ---

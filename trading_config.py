@@ -240,11 +240,30 @@ class TradingConfig:
     # ============================================================
     _sentiment = _config.get('sentiment', {})
     SENTIMENT_FILTER_ENABLED = _sentiment.get('enabled', True) if isinstance(_sentiment, dict) else True
-    EXTREME_FEAR_THRESHOLD = _sentiment.get('extreme_fear_threshold', 20) if isinstance(_sentiment, dict) else 20
-    EXTREME_FEAR_ACTION = _sentiment.get('extreme_fear_action', 'cautious_long') if isinstance(_sentiment, dict) else 'cautious_long'
-    EXTREME_GREED_THRESHOLD = _sentiment.get('extreme_greed_threshold', 80) if isinstance(_sentiment, dict) else 80
+    EXTREME_FEAR_THRESHOLD = _sentiment.get('extreme_fear_threshold', 25) if isinstance(_sentiment, dict) else 25
+    EXTREME_FEAR_ACTION = _sentiment.get('extreme_fear_action', 'hold') if isinstance(_sentiment, dict) else 'hold'
+    EXTREME_GREED_THRESHOLD = _sentiment.get('extreme_greed_threshold', 70) if isinstance(_sentiment, dict) else 70
     EXTREME_GREED_ACTION = _sentiment.get('extreme_greed_action', 'prefer_short') if isinstance(_sentiment, dict) else 'prefer_short'
-    EXTREME_CONFIDENCE_PENALTY = _sentiment.get('extreme_confidence_penalty', 0.10) if isinstance(_sentiment, dict) else 0.10
+    EXTREME_CONFIDENCE_PENALTY = _sentiment.get('extreme_confidence_penalty', 0.05) if isinstance(_sentiment, dict) else 0.05
+    
+    # ============================================================
+    # 做空激励配置
+    # ============================================================
+    _short_selling = _config.get('short_selling', {})
+    SHORT_SELLING_ENABLED = _short_selling.get('enabled', True) if isinstance(_short_selling, dict) else True
+    SHORT_CONFIDENCE_BOOST = _short_selling.get('confidence_boost', 0.05) if isinstance(_short_selling, dict) else 0.05
+    SHORT_DOWNTREND_BOOST = _short_selling.get('downtrend_boost', 0.08) if isinstance(_short_selling, dict) else 0.08
+    SHORT_RISK_REWARD_RATIO = _short_selling.get('risk_reward_ratio', 1.8) if isinstance(_short_selling, dict) else 1.8
+    
+    # ============================================================
+    # K线形态识别配置
+    # ============================================================
+    _pattern = _config.get('pattern_recognition', {})
+    PATTERN_RECOGNITION_ENABLED = _pattern.get('enabled', True) if isinstance(_pattern, dict) else True
+    PATTERN_TIMEFRAME = _pattern.get('timeframe', '15m') if isinstance(_pattern, dict) else '15m'
+    PATTERN_CANDLE_COUNT = _pattern.get('candle_count', 5) if isinstance(_pattern, dict) else 5
+    PATTERN_MAX_ADJUSTMENT = _pattern.get('max_confidence_adjustment', 0.15) if isinstance(_pattern, dict) else 0.15
+    PATTERN_MIN_STRENGTH = _pattern.get('min_pattern_strength', 0.3) if isinstance(_pattern, dict) else 0.3
     
     # ============================================================
     # 持仓时间管理配置
